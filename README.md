@@ -3,8 +3,9 @@
 A PowerShell app that scans your **drivers**, **Windows updates**, and **apps** (via winget) — then lets you pick exactly what to update, or update everything in one click. Dark, borderless WPF GUI with a live install console.
 
 ## Demo
-<img src="https://github.com/CameronCodesStuff/updater/raw/main/example.gif" alt="Updater Demo" width="100%">
-
+[<img src="https://github.com/CameronCodesStuff/updater/raw/main/example.gif" alt="Updater Demo" width="100%">
+](https://github.com/user-attachments/assets/1a153a5b-7657-4605-b99b-d0deaaf108b1
+)
 ## Features
 
 - 🔍 **Full scan on launch** — drivers + Windows updates (Windows Update Agent) + apps (winget)
