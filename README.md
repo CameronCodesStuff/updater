@@ -4,6 +4,7 @@ A PowerShell app that scans your **drivers**, **Windows updates**, and **apps** 
 
 ## Demo
 <img src="https://github.com/CameronCodesStuff/updater/raw/main/example.gif" alt="Updater Demo" width="100%">
+
 ## Features
 
 - 🔍 **Full scan on launch** — drivers + Windows updates (Windows Update Agent) + apps (winget)
