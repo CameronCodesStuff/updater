@@ -103,13 +103,13 @@ try {
 
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent">
         <StackPanel Orientation="Horizontal">
-          <TextBlock Text="◈" FontSize="24" Foreground="#2dd4bf" VerticalAlignment="Center"/>
+          <TextBlock Text="&#x25C8;" FontSize="24" Foreground="#2dd4bf" VerticalAlignment="Center"/>
           <TextBlock Text=" UPDATE HUB" FontSize="20" FontWeight="Bold" Foreground="#e2e8f0" VerticalAlignment="Center"/>
           <TextBlock x:Name="CountText" Text="" FontSize="13" Foreground="#64748b" VerticalAlignment="Center" Margin="14,4,0,0"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-          <Button x:Name="MinBtn" Content="—" Width="34" Height="28" Style="{StaticResource Btn}" Padding="0" Margin="0,0,6,0"/>
-          <Button x:Name="CloseBtn" Content="✕" Width="34" Height="28" Style="{StaticResource Btn}" Padding="0"/>
+          <Button x:Name="MinBtn" Content="&#x2014;" Width="34" Height="28" Style="{StaticResource Btn}" Padding="0" Margin="0,0,6,0"/>
+          <Button x:Name="CloseBtn" Content="&#x2715;" Width="34" Height="28" Style="{StaticResource Btn}" Padding="0"/>
         </StackPanel>
       </Grid>
 
@@ -124,7 +124,7 @@ try {
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
           <Button x:Name="SelAllBtn" Content="Select All" Style="{StaticResource Btn}" Margin="0,0,8,0"/>
           <Button x:Name="SelNoneBtn" Content="Select None" Style="{StaticResource Btn}" Margin="0,0,8,0"/>
-          <Button x:Name="RescanBtn" Content="⟳ Rescan" Style="{StaticResource Btn}"/>
+          <Button x:Name="RescanBtn" Content="&#x27F3; Rescan" Style="{StaticResource Btn}"/>
         </StackPanel>
       </Grid>
 
@@ -193,8 +193,8 @@ try {
           <TextBlock x:Name="StatusText" Text="Initializing..." Foreground="#94a3b8" FontSize="13" VerticalAlignment="Center"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-          <Button x:Name="UpdSelBtn" Content="⬆ Update Selected" Style="{StaticResource BtnAccent}" Margin="0,0,10,0" IsEnabled="False"/>
-          <Button x:Name="UpdAllBtn" Content="⚡ Update Everything" Style="{StaticResource BtnPurple}" IsEnabled="False"/>
+          <Button x:Name="UpdSelBtn" Content="&#x2B06; Update Selected" Style="{StaticResource BtnAccent}" Margin="0,0,10,0" IsEnabled="False"/>
+          <Button x:Name="UpdAllBtn" Content="&#x26A1; Update Everything" Style="{StaticResource BtnPurple}" IsEnabled="False"/>
         </StackPanel>
       </Grid>
     </Grid>
@@ -233,10 +233,10 @@ $scanSB = {
             elseif ($g.Name -match 'AMD|Radeon|ATI') { $ven = 'AMD' }
             elseif ($g.Name -match 'Intel|Arc|Iris|UHD') { $ven = 'Intel' }
             $d = "Driver $($g.DriverVersion)"
-            if ($g.DriverDate) { $d += '  ·  {0:yyyy-MM-dd}' -f $g.DriverDate }
-            $d += '  ·  fetch latest via vendor updater'
+            if ($g.DriverDate) { $d += ' | {0:yyyy-MM-dd}' -f $g.DriverDate }
+            $d += ' | fetch latest via vendor updater'
             [void]$items.Add(@{ Name = $g.Name; Kind = 'GPU'; Detail = $d; Size = ''; Id = "GPU|$ven"; Sel = $false })
-            L "Detected GPU: $($g.Name) ($ven) — driver $($g.DriverVersion)"
+            L "Detected GPU: $($g.Name) ($ven) - driver $($g.DriverVersion)"
         }
         if ($gpus.Count -eq 0) { L 'No PCI graphics cards detected.' }
     } catch { L "GPU detection failed: $($_.Exception.Message)" }
@@ -254,7 +254,7 @@ $scanSB = {
                     $sz = if ($u.MaxDownloadSize -gt 0) { '{0:N1} MB' -f ($u.MaxDownloadSize / 1MB) } else { '' }
                     $detail = ''
                     if ($kind -eq 'Driver') {
-                        try { $detail = ('{0}  ·  {1}' -f $u.DriverProvider, $u.DriverVerDate) } catch { $detail = 'Driver update' }
+                        try { $detail = ('{0} | {1}' -f $u.DriverProvider, $u.DriverVerDate) } catch { $detail = 'Driver update' }
                     } else {
                         $kbs = @($u.KBArticleIDs)
                         if ($kbs.Count -gt 0) { $detail = 'KB' + ($kbs -join ', KB') }
@@ -292,14 +292,14 @@ $scanSB = {
                         $cur = $ln.Substring($iVer, $iAvail - $iVer).Trim()
                         $av = if ($iSrc -gt $iAvail -and $ln.Length -gt $iSrc) { $ln.Substring($iAvail, $iSrc - $iAvail).Trim() } else { $ln.Substring($iAvail).Trim() }
                         if ($id -and $id -notmatch '\s' -and $id -match '\.') {
-                            [void]$items.Add(@{ Name = $name; Kind = 'App'; Detail = "$cur  →  $av"; Size = ''; Id = $id; Sel = $true })
-                            L "Found [App] $name  $cur → $av"
+                            [void]$items.Add(@{ Name = $name; Kind = 'App'; Detail = "$cur -> $av"; Size = ''; Id = $id; Sel = $true })
+                            L "Found [App] $name  $cur -> $av"
                         }
                     } catch {}
                 }
-            } else { L 'Could not parse winget column layout — skipping app updates.' }
+            } else { L 'Could not parse winget column layout - skipping app updates.' }
         } else { L 'No app upgrades reported by winget.' }
-    } catch { L 'winget not available — skipping app updates.' }
+    } catch { L 'winget not available - skipping app updates.' }
 
     $sync.Results = $items
     $sync.Phase = 'scandone'
@@ -308,7 +308,7 @@ $scanSB = {
 $installSB = {
     param($sync, $wuIds, $appIds, $gpuIds)
     function L($m) { $sync.Log.Enqueue("[$(Get-Date -Format HH:mm:ss)] $m") }
-    $codes = @('Not started', 'In progress', '✓ Succeeded', '⚠ Succeeded with errors', '✕ Failed', '✕ Aborted')
+    $codes = @('Not started', 'In progress', '[OK] Succeeded', '[!] Succeeded with errors', '[X] Failed', '[X] Aborted')
 
     if ($wuIds.Count -gt 0) {
         try {
@@ -337,7 +337,7 @@ $installSB = {
                 $inst = $session.CreateUpdateInstaller(); $inst.Updates = $coll
                 $res = $inst.Install()
                 for ($i = 0; $i -lt $coll.Count; $i++) {
-                    L "$($coll.Item($i).Title)  —  $($codes[$res.GetUpdateResult($i).ResultCode])"
+                    L "$($coll.Item($i).Title)  -  $($codes[$res.GetUpdateResult($i).ResultCode])"
                 }
                 if ($res.RebootRequired) { $sync.Reboot = $true }
             }
@@ -349,20 +349,21 @@ $installSB = {
         L "Updating app: $a"
         try {
             $p = Start-Process winget -ArgumentList @('upgrade', '--id', $a, '--silent', '--include-unknown', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity') -Wait -PassThru -WindowStyle Hidden
-            if ($p.ExitCode -eq 0) { L "$a  —  ✓ Succeeded" } else { L "$a  —  exit code $($p.ExitCode)" }
-        } catch { L "$a  —  ✕ Failed to launch winget" }
+            if ($p.ExitCode -eq 0) { L "$a  -  [OK] Succeeded" } else { L "$a  -  exit code $($p.ExitCode)" }
+        } catch { L "$a  -  [X] Failed to launch winget" }
     }
 
     $gpuMap = @{
-        NVIDIA = @{ Pkgs = @('Nvidia.App', 'Nvidia.GeForceExperience'); Url = 'https://www.nvidia.com/Download/index.aspx' }
-        AMD    = @{ Pkgs = @('AMD.AdrenalinSoftware'); Url = 'https://www.amd.com/en/support' }
-        Intel  = @{ Pkgs = @('Intel.IntelDriverAndSupportAssistant'); Url = 'https://www.intel.com/content/www/us/en/support/detect.html' }
-        Other  = @{ Pkgs = @(); Url = 'https://www.microsoft.com/en-us/windows/windows-update' }
+        'NVIDIA' = @{ Pkgs = @('Nvidia.App', 'Nvidia.GeForceExperience'); Url = 'https://www.nvidia.com/Download/index.aspx' }
+        'AMD'    = @{ Pkgs = @('AMD.AdrenalinSoftware'); Url = 'https://www.amd.com/en/support' }
+        'Intel'  = @{ Pkgs = @('Intel.IntelDriverAndSupportAssistant'); Url = 'https://www.intel.com/content/www/us/en/support/detect.html' }
+        'Other'  = @{ Pkgs = @(); Url = 'https://www.microsoft.com/en-us/windows/windows-update' }
     }
     $doneVendors = @{}
     foreach ($g in $gpuIds) {
-        $ven = ($g -split '\|')[1]
-        if (-not $ven -or $doneVendors.ContainsKey($ven)) { continue }
+        $parts = $g -split '\|'
+        $ven = if ($parts.Count -gt 1) { $parts[1] } else { 'Other' }
+        if ($doneVendors.ContainsKey($ven)) { continue }
         $doneVendors[$ven] = $true
         $cfg = $gpuMap[$ven]
         if (-not $cfg) { $cfg = $gpuMap['Other'] }
@@ -372,13 +373,13 @@ $installSB = {
         foreach ($pkg in $cfg.Pkgs) {
             try {
                 $p = Start-Process winget -ArgumentList @('install', '--id', $pkg, '--silent', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity') -Wait -PassThru -WindowStyle Hidden
-                if ($p.ExitCode -eq 0) { L "GPU ($ven): installed $pkg — open it to grab the latest driver"; $ok = $true; break }
-                if ($p.ExitCode -eq -1978335189 -or $p.ExitCode -eq -1978335135) { L "GPU ($ven): $pkg already installed / up to date — open it to update your driver"; $ok = $true; break }
+                if ($p.ExitCode -eq 0) { L "GPU ($ven): installed $pkg - open it to grab the latest driver"; $ok = $true; break }
+                if ($p.ExitCode -eq -1978335189 -or $p.ExitCode -eq -1978335135) { L "GPU ($ven): $pkg already installed / up to date - open it to update your driver"; $ok = $true; break }
             } catch {}
         }
         if (-not $ok) {
             L "GPU ($ven): opening vendor driver page instead..."
-            try { Start-Process $cfg.Url } catch { L "GPU ($ven): could not open browser — visit $($cfg.Url)" }
+            try { Start-Process $cfg.Url } catch { L "GPU ($ven): could not open browser - visit $($cfg.Url)" }
         }
     }
 
@@ -410,7 +411,7 @@ function Refresh-List {
     $n = @($script:Items | Where-Object { $_.Kind -ne 'GPU' }).Count
     $g = @($script:Items | Where-Object { $_.Kind -eq 'GPU' }).Count
     $txt = "$n update$(if($n -ne 1){'s'}) available"
-    if ($g -gt 0) { $txt += "  ·  $g GPU$(if($g -ne 1){'s'}) detected" }
+    if ($g -gt 0) { $txt += "  |  $g GPU$(if($g -ne 1){'s'}) detected" }
     $CountText.Text = $txt
 }
 
@@ -451,12 +452,12 @@ $timer.Add_Tick({
         })
         Refresh-List
         $real = @($script:Items | Where-Object { $_.Kind -ne 'GPU' }).Count
-        if ($real -eq 0) { Set-Busy $false 'Everything is up to date ✓' }
-        else { Set-Busy $false "Scan complete — $real update(s) found" }
+        if ($real -eq 0) { Set-Busy $false 'Everything is up to date' }
+        else { Set-Busy $false "Scan complete - $real update(s) found" }
     }
     if ($sync.Phase -eq 'installdone') {
         $sync.Phase = 'idle'
-        Set-Busy $false 'Updates finished — rescanning...'
+        Set-Busy $false 'Updates finished - rescanning...'
         if ($sync.Reboot) {
             $sync.Reboot = $false
             [Windows.MessageBox]::Show('A restart is required to finish installing some updates.', 'Update Hub', 'OK', 'Information') | Out-Null
