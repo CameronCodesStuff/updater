@@ -1,12 +1,13 @@
-﻿param()
+param()
 $ErrorActionPreference = 'SilentlyContinue'
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`"" -Verb RunAs
     exit
 }
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
+if (-not ('UpdItem' -as [type])) {
 Add-Type -TypeDefinition @"
 using System.ComponentModel;
 public class UpdItem : INotifyPropertyChanged {
@@ -20,6 +21,7 @@ public class UpdItem : INotifyPropertyChanged {
     public event PropertyChangedEventHandler PropertyChanged;
 }
 "@
+}
 
 try {
 
@@ -115,6 +117,7 @@ try {
         <StackPanel Orientation="Horizontal">
           <RadioButton x:Name="FAll" Content="All" Style="{StaticResource Filter}" IsChecked="True"/>
           <RadioButton x:Name="FDrv" Content="Drivers" Style="{StaticResource Filter}"/>
+          <RadioButton x:Name="FGpu" Content="GPU" Style="{StaticResource Filter}"/>
           <RadioButton x:Name="FWin" Content="Windows" Style="{StaticResource Filter}"/>
           <RadioButton x:Name="FApp" Content="Apps" Style="{StaticResource Filter}"/>
         </StackPanel>
@@ -169,6 +172,10 @@ try {
                   <Setter TargetName="Badge" Property="Background" Value="#1AA78BFA"/>
                   <Setter TargetName="BadgeT" Property="Foreground" Value="#c4b5fd"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="GPU">
+                  <Setter TargetName="Badge" Property="Background" Value="#1AFB923C"/>
+                  <Setter TargetName="BadgeT" Property="Foreground" Value="#fdba74"/>
+                </DataTrigger>
               </DataTemplate.Triggers>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -197,7 +204,7 @@ try {
 
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $win = [Windows.Markup.XamlReader]::Load($reader)
-foreach ($n in @('TitleBar','CountText','MinBtn','CloseBtn','FAll','FDrv','FWin','FApp','SelAllBtn','SelNoneBtn','RescanBtn','List','LogBox','StatusDot','StatusText','UpdSelBtn','UpdAllBtn')) {
+foreach ($n in @('TitleBar','CountText','MinBtn','CloseBtn','FAll','FDrv','FGpu','FWin','FApp','SelAllBtn','SelNoneBtn','RescanBtn','List','LogBox','StatusDot','StatusText','UpdSelBtn','UpdAllBtn')) {
     Set-Variable -Name $n -Value $win.FindName($n)
 }
 
@@ -216,6 +223,24 @@ $scanSB = {
     param($sync)
     function L($m) { $sync.Log.Enqueue("[$(Get-Date -Format HH:mm:ss)] $m") }
     $items = New-Object System.Collections.ArrayList
+
+    $sync.Status = 'Detecting graphics cards...'
+    try {
+        $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop | Where-Object { $_.PNPDeviceID -like 'PCI*' })
+        foreach ($g in $gpus) {
+            $ven = 'Other'
+            if ($g.Name -match 'NVIDIA|GeForce|RTX|GTX|Quadro') { $ven = 'NVIDIA' }
+            elseif ($g.Name -match 'AMD|Radeon|ATI') { $ven = 'AMD' }
+            elseif ($g.Name -match 'Intel|Arc|Iris|UHD') { $ven = 'Intel' }
+            $d = "Driver $($g.DriverVersion)"
+            if ($g.DriverDate) { $d += '  ·  {0:yyyy-MM-dd}' -f $g.DriverDate }
+            $d += '  ·  fetch latest via vendor updater'
+            [void]$items.Add(@{ Name = $g.Name; Kind = 'GPU'; Detail = $d; Size = ''; Id = "GPU|$ven"; Sel = $false })
+            L "Detected GPU: $($g.Name) ($ven) — driver $($g.DriverVersion)"
+        }
+        if ($gpus.Count -eq 0) { L 'No PCI graphics cards detected.' }
+    } catch { L "GPU detection failed: $($_.Exception.Message)" }
+
     try {
         $session = New-Object -ComObject Microsoft.Update.Session
         $searcher = $session.CreateUpdateSearcher()
@@ -234,46 +259,57 @@ $scanSB = {
                         $kbs = @($u.KBArticleIDs)
                         if ($kbs.Count -gt 0) { $detail = 'KB' + ($kbs -join ', KB') }
                     }
-                    [void]$items.Add(@{ Name = $u.Title; Kind = $kind; Detail = $detail; Size = $sz; Id = $u.Identity.UpdateID })
+                    [void]$items.Add(@{ Name = $u.Title; Kind = $kind; Detail = $detail; Size = $sz; Id = $u.Identity.UpdateID; Sel = $true })
                     L "Found [$kind] $($u.Title)"
                 }
             } catch { L "Windows Update search failed ($kind): $($_.Exception.Message)" }
         }
     } catch { L "Windows Update agent error: $($_.Exception.Message)" }
+
     $sync.Status = 'Checking apps via winget...'
     try {
         $null = Get-Command winget -ErrorAction Stop
         L 'Running winget upgrade scan...'
-        $raw = & winget upgrade --include-unknown --accept-source-agreements 2>$null | Out-String
+        $raw = & winget upgrade --include-unknown --accept-source-agreements --disable-interactivity 2>$null | Out-String
+        $raw = $raw -replace "`b", '' -replace '[\u2588\u2592\u2580\u2584]', ''
         $lines = $raw -split "`r?`n"
         $hdr = $lines | Where-Object { $_ -match '^Name\s+Id\s+Version' } | Select-Object -First 1
         if ($hdr) {
-            $iId = $hdr.IndexOf('Id'); $iVer = $hdr.IndexOf('Version'); $iAvail = $hdr.IndexOf('Available'); $iSrc = $hdr.IndexOf('Source')
-            $started = $false
-            foreach ($ln in $lines) {
-                if ($ln -match '^-{5,}') { if ($started) { break }; $started = $true; continue }
-                if (-not $started) { continue }
-                if ($ln -match '^\d+\s+(upgrades|package)' -or $ln -match '^The following') { break }
-                if ($ln.Trim() -eq '' -or $ln.Length -lt $iAvail) { continue }
-                $name = $ln.Substring(0, [Math]::Min($iId, $ln.Length)).Trim()
-                $id = $ln.Substring($iId, $iVer - $iId).Trim()
-                $cur = $ln.Substring($iVer, $iAvail - $iVer).Trim()
-                $av = if ($iSrc -gt 0 -and $ln.Length -gt $iSrc) { $ln.Substring($iAvail, $iSrc - $iAvail).Trim() } else { $ln.Substring($iAvail).Trim() }
-                if ($id -and $id -notmatch '\s') {
-                    [void]$items.Add(@{ Name = $name; Kind = 'App'; Detail = "$cur  →  $av"; Size = ''; Id = $id })
-                    L "Found [App] $name  $cur → $av"
+            $iId = $hdr.IndexOf(' Id ') + 1
+            $iVer = $hdr.IndexOf('Version')
+            $iAvail = $hdr.IndexOf('Available')
+            $iSrc = $hdr.IndexOf('Source')
+            if ($iId -gt 0 -and $iVer -gt $iId -and $iAvail -gt $iVer) {
+                $started = $false
+                foreach ($ln in $lines) {
+                    if ($ln -match '^-{5,}') { if ($started) { break }; $started = $true; continue }
+                    if (-not $started) { continue }
+                    if ($ln -match '^\d+\s+(upgrades|package)' -or $ln -match '^The following') { break }
+                    if ($ln.Trim() -eq '' -or $ln.Length -le $iAvail) { continue }
+                    try {
+                        $name = $ln.Substring(0, [Math]::Min($iId, $ln.Length)).Trim()
+                        $id = $ln.Substring($iId, $iVer - $iId).Trim()
+                        $cur = $ln.Substring($iVer, $iAvail - $iVer).Trim()
+                        $av = if ($iSrc -gt $iAvail -and $ln.Length -gt $iSrc) { $ln.Substring($iAvail, $iSrc - $iAvail).Trim() } else { $ln.Substring($iAvail).Trim() }
+                        if ($id -and $id -notmatch '\s' -and $id -match '\.') {
+                            [void]$items.Add(@{ Name = $name; Kind = 'App'; Detail = "$cur  →  $av"; Size = ''; Id = $id; Sel = $true })
+                            L "Found [App] $name  $cur → $av"
+                        }
+                    } catch {}
                 }
-            }
+            } else { L 'Could not parse winget column layout — skipping app updates.' }
         } else { L 'No app upgrades reported by winget.' }
     } catch { L 'winget not available — skipping app updates.' }
+
     $sync.Results = $items
     $sync.Phase = 'scandone'
 }
 
 $installSB = {
-    param($sync, $wuIds, $appIds)
+    param($sync, $wuIds, $appIds, $gpuIds)
     function L($m) { $sync.Log.Enqueue("[$(Get-Date -Format HH:mm:ss)] $m") }
     $codes = @('Not started', 'In progress', '✓ Succeeded', '⚠ Succeeded with errors', '✕ Failed', '✕ Aborted')
+
     if ($wuIds.Count -gt 0) {
         try {
             $session = New-Object -ComObject Microsoft.Update.Session
@@ -307,14 +343,45 @@ $installSB = {
             }
         } catch { L "Windows Update install error: $($_.Exception.Message)" }
     }
+
     foreach ($a in $appIds) {
         $sync.Status = "Updating app: $a"
         L "Updating app: $a"
         try {
-            $p = Start-Process winget -ArgumentList @('upgrade', '--id', $a, '--silent', '--accept-source-agreements', '--accept-package-agreements') -Wait -PassThru -WindowStyle Hidden
+            $p = Start-Process winget -ArgumentList @('upgrade', '--id', $a, '--silent', '--include-unknown', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity') -Wait -PassThru -WindowStyle Hidden
             if ($p.ExitCode -eq 0) { L "$a  —  ✓ Succeeded" } else { L "$a  —  exit code $($p.ExitCode)" }
         } catch { L "$a  —  ✕ Failed to launch winget" }
     }
+
+    $gpuMap = @{
+        NVIDIA = @{ Pkgs = @('Nvidia.App', 'Nvidia.GeForceExperience'); Url = 'https://www.nvidia.com/Download/index.aspx' }
+        AMD    = @{ Pkgs = @('AMD.AdrenalinSoftware'); Url = 'https://www.amd.com/en/support' }
+        Intel  = @{ Pkgs = @('Intel.IntelDriverAndSupportAssistant'); Url = 'https://www.intel.com/content/www/us/en/support/detect.html' }
+        Other  = @{ Pkgs = @(); Url = 'https://www.microsoft.com/en-us/windows/windows-update' }
+    }
+    $doneVendors = @{}
+    foreach ($g in $gpuIds) {
+        $ven = ($g -split '\|')[1]
+        if (-not $ven -or $doneVendors.ContainsKey($ven)) { continue }
+        $doneVendors[$ven] = $true
+        $cfg = $gpuMap[$ven]
+        if (-not $cfg) { $cfg = $gpuMap['Other'] }
+        $sync.Status = "Getting latest $ven GPU drivers..."
+        L "GPU ($ven): fetching latest drivers via vendor updater..."
+        $ok = $false
+        foreach ($pkg in $cfg.Pkgs) {
+            try {
+                $p = Start-Process winget -ArgumentList @('install', '--id', $pkg, '--silent', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity') -Wait -PassThru -WindowStyle Hidden
+                if ($p.ExitCode -eq 0) { L "GPU ($ven): installed $pkg — open it to grab the latest driver"; $ok = $true; break }
+                if ($p.ExitCode -eq -1978335189 -or $p.ExitCode -eq -1978335135) { L "GPU ($ven): $pkg already installed / up to date — open it to update your driver"; $ok = $true; break }
+            } catch {}
+        }
+        if (-not $ok) {
+            L "GPU ($ven): opening vendor driver page instead..."
+            try { Start-Process $cfg.Url } catch { L "GPU ($ven): could not open browser — visit $($cfg.Url)" }
+        }
+    }
+
     $sync.Phase = 'installdone'
 }
 
@@ -340,7 +407,11 @@ function Set-Busy($busy, $msg) {
 function Refresh-List {
     $view = if ($script:Filter -eq 'All') { $script:Items } else { @($script:Items | Where-Object { $_.Kind -eq $script:Filter }) }
     $List.ItemsSource = @($view)
-    $CountText.Text = "$($script:Items.Count) update$(if($script:Items.Count -ne 1){'s'}) available"
+    $n = @($script:Items | Where-Object { $_.Kind -ne 'GPU' }).Count
+    $g = @($script:Items | Where-Object { $_.Kind -eq 'GPU' }).Count
+    $txt = "$n update$(if($n -ne 1){'s'}) available"
+    if ($g -gt 0) { $txt += "  ·  $g GPU$(if($g -ne 1){'s'}) detected" }
+    $CountText.Text = $txt
 }
 
 function Start-Scan {
@@ -353,12 +424,13 @@ function Start-Scan {
 }
 
 function Start-Install($items) {
-    $wu = @($items | Where-Object { $_.Kind -ne 'App' } | ForEach-Object { $_.Id })
+    $wu = @($items | Where-Object { $_.Kind -eq 'Driver' -or $_.Kind -eq 'Windows' } | ForEach-Object { $_.Id })
     $apps = @($items | Where-Object { $_.Kind -eq 'App' } | ForEach-Object { $_.Id })
-    if ($wu.Count -eq 0 -and $apps.Count -eq 0) { return }
+    $gpus = @($items | Where-Object { $_.Kind -eq 'GPU' } | ForEach-Object { $_.Id })
+    if ($wu.Count -eq 0 -and $apps.Count -eq 0 -and $gpus.Count -eq 0) { return }
     Set-Busy $true 'Installing updates...'
     $sync.Phase = 'installing'
-    Start-Work $installSB @($sync, $wu, $apps)
+    Start-Work $installSB @($sync, $wu, $apps, $gpus)
 }
 
 $timer = New-Object Windows.Threading.DispatcherTimer
@@ -374,11 +446,13 @@ $timer.Add_Tick({
         $script:Items = @(foreach ($h in $sync.Results) {
             $o = New-Object UpdItem
             $o.Name = $h.Name; $o.Kind = $h.Kind; $o.Detail = $h.Detail; $o.Size = $h.Size; $o.Id = $h.Id
+            $o.IsSelected = [bool]$h.Sel
             $o
         })
         Refresh-List
-        if ($script:Items.Count -eq 0) { Set-Busy $false 'Everything is up to date ✓' }
-        else { Set-Busy $false "Scan complete — $($script:Items.Count) update(s) found" }
+        $real = @($script:Items | Where-Object { $_.Kind -ne 'GPU' }).Count
+        if ($real -eq 0) { Set-Busy $false 'Everything is up to date ✓' }
+        else { Set-Busy $false "Scan complete — $real update(s) found" }
     }
     if ($sync.Phase -eq 'installdone') {
         $sync.Phase = 'idle'
@@ -400,6 +474,7 @@ $SelAllBtn.Add_Click({ foreach ($i in $script:Items) { $i.IsSelected = $true } }
 $SelNoneBtn.Add_Click({ foreach ($i in $script:Items) { $i.IsSelected = $false } })
 $FAll.Add_Checked({ $script:Filter = 'All'; Refresh-List })
 $FDrv.Add_Checked({ $script:Filter = 'Driver'; Refresh-List })
+$FGpu.Add_Checked({ $script:Filter = 'GPU'; Refresh-List })
 $FWin.Add_Checked({ $script:Filter = 'Windows'; Refresh-List })
 $FApp.Add_Checked({ $script:Filter = 'App'; Refresh-List })
 $UpdSelBtn.Add_Click({ Start-Install @($script:Items | Where-Object { $_.IsSelected }) })
@@ -414,9 +489,5 @@ $win.Add_Closed({
 [void]$win.ShowDialog()
 
 } catch {
-    Write-Host ''
-    Write-Host 'UPDATE HUB CRASHED:' -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Yellow
-    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
-    Read-Host 'Press Enter to close'
+    [Windows.MessageBox]::Show("Update Hub crashed:`n`n$($_.Exception.Message)`n`n$($_.ScriptStackTrace)", 'Update Hub', 'OK', 'Error') | Out-Null
 }
